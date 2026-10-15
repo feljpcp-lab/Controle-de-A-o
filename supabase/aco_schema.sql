@@ -139,6 +139,10 @@ grant select,insert,update on public.aco_lotes to authenticated;
 grant select,insert,update,delete on public.aco_listas_corte,public.aco_itens_lista_corte,public.aco_remanescentes to authenticated;
 grant select,insert on public.aco_apontamentos_serra,public.aco_ajustes_inventario,public.aco_movimentacoes to authenticated;
 
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+
 -- Reforço de validação de vínculo: impede apontar em OS/medida/material divergentes.
 create or replace function private.aco_confirmar_corte(
  p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
