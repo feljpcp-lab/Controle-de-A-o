@@ -76,7 +76,7 @@ as $$ select coalesce(auth.jwt()->'app_metadata'->>'role','') $$;
 create or replace function public.aco_pode_ver() returns boolean language sql stable security invoker set search_path=''
 as $$ select auth.uid() is not null and public.aco_papel_atual() in('admin','pcp','almoxarifado','serra') $$;
 create or replace function public.aco_pode_gerir() returns boolean language sql stable security invoker set search_path=''
-as $ select auth.uid() is not null and public.aco_papel_atual() in('admin','pcp','almoxarifado') $;
+as $$ select auth.uid() is not null and public.aco_papel_atual() in('admin','pcp','almoxarifado') $$;
 revoke all on function public.aco_papel_atual() from public,anon;
 revoke all on function public.aco_pode_ver() from public,anon;
 revoke all on function public.aco_pode_gerir() from public,anon;
