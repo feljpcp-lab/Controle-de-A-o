@@ -172,7 +172,7 @@ create or replace function private.aco_confirmar_corte(
  p_comprimento_peca_mm numeric,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
 ) returns uuid language plpgsql security definer set search_path=''
 as $$
-declare v_lote public.aco_lotes%rowtype; v_item public.aco_itens_lista_corte%rowtype; v_perda integer; v_consumo numeric(12,2); v_sobra numeric(12,2); v_id uuid;
+declare v_lote public.aco_lotes%rowtype; v_item public.aco_itens_lista_corte%rowtype; v_perda integer; v_consumo numeric(12,2); v_sobra numeric(12,2); v_id uuid; v_destino text;
 begin
  if auth.uid() is null or public.aco_papel_atual() not in('admin','pcp','serra') then raise exception 'Acesso negado para apontamento de serra'; end if;
  if trim(coalesce(p_os,''))='' or p_quantidade_pecas<1 or p_comprimento_peca_mm<1 or p_quantidade_cortes<1 then raise exception 'OS, quantidades e comprimento são obrigatórios'; end if;
@@ -189,15 +189,13 @@ begin
  v_consumo:=p_quantidade_pecas*p_comprimento_peca_mm+p_quantidade_cortes*v_perda;
  v_sobra:=v_lote.comprimento_barra_mm-v_consumo;
  if v_sobra<0 then raise exception 'Consumo calculado (%) excede o comprimento da barra (%)',v_consumo,v_lote.comprimento_barra_mm; end if;
- if p_destino_sobra not in('reutilizavel','sucata','sem_sobra') then raise exception 'Destino da sobra inválido'; end if;
- if p_destino_sobra='sem_sobra' and v_sobra>0 then raise exception 'Há sobra calculada; selecione reutilizável ou sucata'; end if;
- if p_destino_sobra='reutilizavel' and v_sobra<100 then raise exception 'Sobra menor que 100 mm: classifique como sucata'; end if;
+ v_destino:=case when v_sobra>0 then 'reutilizavel' else 'sem_sobra' end;
  update public.aco_lotes set quantidade_barras=quantidade_barras-1,atualizado_em=now() where id=p_lote_id;
  insert into public.aco_apontamentos_serra(lote_id,item_lista_id,os,componente,material,diametro_mm,comprimento_peca_mm,quantidade_pecas,quantidade_cortes,perda_corte_mm,consumo_total_mm,barra_comprimento_mm,sobra_mm,destino_sobra,observacoes)
- values(p_lote_id,p_item_lista_id,p_os,p_componente,v_lote.material,v_lote.diametro_mm,p_comprimento_peca_mm,p_quantidade_pecas,p_quantidade_cortes,v_perda,v_consumo,v_lote.comprimento_barra_mm,v_sobra,p_destino_sobra,p_observacoes) returning id into v_id;
- if p_destino_sobra='reutilizavel' and v_sobra>=100 then insert into public.aco_remanescentes(lote_origem_id,apontamento_id,material,diametro_mm,comprimento_mm,localizacao) values(p_lote_id,v_id,v_lote.material,v_lote.diametro_mm,v_sobra,v_lote.localizacao); end if;
+ values(p_lote_id,p_item_lista_id,p_os,p_componente,v_lote.material,v_lote.diametro_mm,p_comprimento_peca_mm,p_quantidade_pecas,p_quantidade_cortes,v_perda,v_consumo,v_lote.comprimento_barra_mm,v_sobra,v_destino,p_observacoes) returning id into v_id;
+ if v_sobra>0 then insert into public.aco_remanescentes(lote_origem_id,apontamento_id,material,diametro_mm,comprimento_mm,localizacao) values(p_lote_id,v_id,v_lote.material,v_lote.diametro_mm,v_sobra,v_lote.localizacao); end if;
  if p_item_lista_id is not null then update public.aco_itens_lista_corte set quantidade_cortada=quantidade_cortada+p_quantidade_pecas where id=p_item_lista_id; end if;
- insert into public.aco_movimentacoes(lote_id,tipo,quantidade_barras_delta,comprimento_mm,referencia,observacoes) values(p_lote_id,'consumo_serra',-1,v_consumo,p_os,'Apontamento serra '||v_id::text);
+ insert into public.aco_movimentacoes(lote_id,tipo,quantidade_barras_delta,comprimento_mm,referencia,observacoes) values(p_lote_id,'consumo_serra',-1,v_consumo,p_os,'Apontamento serra '||v_id::text||case when v_sobra>0 then '; sobra devolvida ao estoque de remanescentes: '||v_sobra||' mm' else '; sem sobra de material' end);
  return v_id;
 end $$;
 revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,numeric,integer,text,text) from public,anon;
