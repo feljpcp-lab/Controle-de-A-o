@@ -168,3 +168,19 @@ create policy aco_mov_insert on public.aco_movimentacoes for insert to authentic
 grant select,insert,update on public.aco_lotes to authenticated;
 grant select,insert,update,delete on public.aco_listas_corte,public.aco_itens_lista_corte,public.aco_remanescentes to authenticated;
 grant select,insert on public.aco_apontamentos_serra,public.aco_ajustes_inventario,public.aco_movimentacoes to authenticated;
+
+-- A rotina privilegiada fica no schema privado; a RPC pública é apenas invoker.
+create schema if not exists private;
+revoke all on schema private from public;
+grant usage on schema private to authenticated;
+alter function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) set schema private;
+revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public,anon;
+grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
+create or replace function public.aco_confirmar_corte(
+ p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
+ p_comprimento_peca_mm integer,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
+) returns uuid language sql security invoker set search_path=''
+as $$ select private.aco_confirmar_corte(p_lote_id,p_item_lista_id,p_os,p_componente,p_quantidade_pecas,p_comprimento_peca_mm,p_quantidade_cortes,p_destino_sobra,p_observacoes) $$;
+revoke all on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public,anon;
+grant execute on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
+grant execute on function public.aco_registrar_entrada(text,text,text,text,text,numeric,integer,integer,text,text) to authenticated;
