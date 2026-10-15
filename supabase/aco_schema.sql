@@ -178,7 +178,7 @@ begin
  return v_id;
 end $$;
 revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,numeric,integer,text,text) from public,anon;
-grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
+grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,numeric,integer,text,text) to authenticated;
 -- O schema privado não é exposto pela API; só usuários autenticados podem executar a rotina via wrapper.
 create schema if not exists private;
 revoke all on schema private from public, anon;
@@ -187,7 +187,7 @@ revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,i
 grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
 create or replace function public.aco_confirmar_corte(
  p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
- p_comprimento_peca_mm integer,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
+ p_comprimento_peca_mm numeric,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
 ) returns uuid language sql security invoker set search_path=''
 as $$ select private.aco_confirmar_corte(p_lote_id,p_item_lista_id,p_os,p_componente,p_quantidade_pecas,p_comprimento_peca_mm,p_quantidade_cortes,p_destino_sobra,p_observacoes) $$;
 revoke all on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public, anon;
