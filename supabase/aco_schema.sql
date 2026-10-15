@@ -76,7 +76,13 @@ as $$ select coalesce(auth.jwt()->'app_metadata'->>'role','') $$;
 create or replace function public.aco_pode_ver() returns boolean language sql stable security invoker set search_path=''
 as $$ select auth.uid() is not null and public.aco_papel_atual() in('admin','pcp','almoxarifado','serra') $$;
 create or replace function public.aco_pode_gerir() returns boolean language sql stable security invoker set search_path=''
-as $$ select auth.uid() is not null and public.aco_papel_atual() in('admin','pcp','almoxarifado') $$;
+as $ select auth.uid() is not null and public.aco_papel_atual() in('admin','pcp','almoxarifado') $;
+revoke all on function public.aco_papel_atual() from public,anon;
+revoke all on function public.aco_pode_ver() from public,anon;
+revoke all on function public.aco_pode_gerir() from public,anon;
+grant execute on function public.aco_papel_atual() to authenticated;
+grant execute on function public.aco_pode_ver() to authenticated;
+grant execute on function public.aco_pode_gerir() to authenticated;
 
 create or replace function public.aco_registrar_entrada(
  p_codigo_lote text,p_fornecedor text,p_nota_fiscal text,p_certificado_path text,p_material text,
