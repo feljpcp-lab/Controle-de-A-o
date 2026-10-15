@@ -80,36 +80,6 @@ begin
  return v_id;
 end $$;
 
-create or replace function public.aco_confirmar_corte(
- p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
- p_comprimento_peca_mm integer,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
-) returns uuid language plpgsql security definer set search_path=''
-as $$
-declare v_lote public.aco_lotes%rowtype; v_perda integer; v_consumo integer; v_sobra integer; v_id uuid;
-begin
- if auth.uid() is null or public.aco_papel_atual() not in('admin','pcp','serra') then raise exception 'Acesso negado para apontamento de serra'; end if;
- if trim(coalesce(p_os,''))='' or p_quantidade_pecas<1 or p_comprimento_peca_mm<1 or p_quantidade_cortes<1 then raise exception 'OS, quantidades e comprimento são obrigatórios'; end if;
- select * into v_lote from public.aco_lotes where id=p_lote_id and ativo=true for update;
- if not found then raise exception 'Lote não encontrado ou inativo'; end if;
- if v_lote.quantidade_barras<1 then raise exception 'Estoque sem barras disponíveis'; end if;
- v_perda:=case when v_lote.diametro_mm<250 then 3 else 4 end;
- v_consumo:=p_quantidade_pecas*p_comprimento_peca_mm+p_quantidade_cortes*v_perda;
- v_sobra:=v_lote.comprimento_barra_mm-v_consumo;
- if v_sobra<0 then raise exception 'Consumo calculado (%) excede o comprimento da barra (%)',v_consumo,v_lote.comprimento_barra_mm; end if;
- if p_destino_sobra not in('reutilizavel','sucata','sem_sobra') then raise exception 'Destino da sobra inválido'; end if;
- if p_destino_sobra='sem_sobra' and v_sobra>0 then raise exception 'Há sobra calculada; selecione reutilizável ou sucata'; end if;
- if p_destino_sobra='reutilizavel' and v_sobra<100 then raise exception 'Sobra menor que 100 mm: classifique como sucata'; end if;
- update public.aco_lotes set quantidade_barras=quantidade_barras-1,atualizado_em=now() where id=p_lote_id;
- insert into public.aco_apontamentos_serra(lote_id,item_lista_id,os,componente,material,diametro_mm,comprimento_peca_mm,quantidade_pecas,quantidade_cortes,perda_corte_mm,consumo_total_mm,barra_comprimento_mm,sobra_mm,destino_sobra,observacoes)
- values(p_lote_id,p_item_lista_id,p_os,p_componente,v_lote.material,v_lote.diametro_mm,p_comprimento_peca_mm,p_quantidade_pecas,p_quantidade_cortes,v_perda,v_consumo,v_lote.comprimento_barra_mm,v_sobra,p_destino_sobra,p_observacoes) returning id into v_id;
- if p_destino_sobra='reutilizavel' and v_sobra>=100 then insert into public.aco_remanescentes(lote_origem_id,apontamento_id,material,diametro_mm,comprimento_mm,localizacao) values(p_lote_id,v_id,v_lote.material,v_lote.diametro_mm,v_sobra,v_lote.localizacao); end if;
- if p_item_lista_id is not null then update public.aco_itens_lista_corte set quantidade_cortada=quantidade_cortada+p_quantidade_pecas where id=p_item_lista_id; end if;
- insert into public.aco_movimentacoes(lote_id,tipo,quantidade_barras_delta,comprimento_mm,referencia,observacoes) values(p_lote_id,'consumo_serra',-1,v_consumo,p_os,'Apontamento serra '||v_id::text);
- return v_id;
-end $$;
-revoke all on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public,anon;
-grant execute on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
-
 create or replace function public.aco_confirmar_ajuste(p_lote_id uuid,p_quantidade_fisica integer,p_justificativa text)
 returns uuid language plpgsql security invoker set search_path=''
 as $$
@@ -169,22 +139,6 @@ grant select,insert,update on public.aco_lotes to authenticated;
 grant select,insert,update,delete on public.aco_listas_corte,public.aco_itens_lista_corte,public.aco_remanescentes to authenticated;
 grant select,insert on public.aco_apontamentos_serra,public.aco_ajustes_inventario,public.aco_movimentacoes to authenticated;
 
--- A rotina privilegiada fica no schema privado; a RPC pública é apenas invoker.
-create schema if not exists private;
-revoke all on schema private from public;
-grant usage on schema private to authenticated;
-alter function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) set schema private;
-revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public,anon;
-grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
-create or replace function public.aco_confirmar_corte(
- p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
- p_comprimento_peca_mm integer,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
-) returns uuid language sql security invoker set search_path=''
-as $$ select private.aco_confirmar_corte(p_lote_id,p_item_lista_id,p_os,p_componente,p_quantidade_pecas,p_comprimento_peca_mm,p_quantidade_cortes,p_destino_sobra,p_observacoes) $$;
-revoke all on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public,anon;
-grant execute on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
-grant execute on function public.aco_registrar_entrada(text,text,text,text,text,numeric,integer,integer,text,text) to authenticated;
-
 -- Reforço de validação de vínculo: impede apontar em OS/medida/material divergentes.
 create or replace function private.aco_confirmar_corte(
  p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
@@ -221,6 +175,40 @@ begin
 end $$;
 revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public,anon;
 grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
+-- O schema privado não é exposto pela API; só usuários autenticados podem executar a rotina via wrapper.
+create schema if not exists private;
+revoke all on schema private from public, anon;
+grant usage on schema private to authenticated;
+revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public, anon;
+grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
+create or replace function public.aco_confirmar_corte(
+ p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
+ p_comprimento_peca_mm integer,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
+) returns uuid language sql security invoker set search_path=''
+as $$ select private.aco_confirmar_corte(p_lote_id,p_item_lista_id,p_os,p_componente,p_quantidade_pecas,p_comprimento_peca_mm,p_quantidade_cortes,p_destino_sobra,p_observacoes) $$;
+revoke all on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public, anon;
+grant execute on function public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
+revoke all on function public.aco_registrar_entrada(text,text,text,text,text,numeric,integer,integer,text,text) from public, anon;
+grant execute on function public.aco_registrar_entrada(text,text,text,text,text,numeric,integer,integer,text,text) to authenticated;
+
+-- Bucket privado para certificados; o acesso é concedido por políticas RLS de Storage.
+insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
+values ('aco-certificados','aco-certificados',false,10485760,array['application/pdf','image/jpeg','image/png'])
+on conflict (id) do update set public=false,file_size_limit=10485760,allowed_mime_types=array['application/pdf','image/jpeg','image/png'];
+drop policy if exists aco_certificados_read on storage.objects;
+create policy aco_certificados_read on storage.objects for select to authenticated
+using (bucket_id='aco-certificados' and (select public.aco_pode_ver()));
+drop policy if exists aco_certificados_upload on storage.objects;
+create policy aco_certificados_upload on storage.objects for insert to authenticated
+with check (bucket_id='aco-certificados' and (select public.aco_pode_gerir()) and (storage.foldername(name))[1]=(select auth.uid())::text);
+drop policy if exists aco_certificados_update on storage.objects;
+create policy aco_certificados_update on storage.objects for update to authenticated
+using (bucket_id='aco-certificados' and (select public.aco_pode_gerir()) and (storage.foldername(name))[1]=(select auth.uid())::text)
+with check (bucket_id='aco-certificados' and (select public.aco_pode_gerir()) and (storage.foldername(name))[1]=(select auth.uid())::text);
+drop policy if exists aco_certificados_delete on storage.objects;
+create policy aco_certificados_delete on storage.objects for delete to authenticated
+using (bucket_id='aco-certificados' and (select public.aco_pode_gerir()) and (storage.foldername(name))[1]=(select auth.uid())::text);
+
 
 -- Índices das chaves estrangeiras e ajustes de políticas para evitar políticas SELECT duplicadas.
 create index if not exists aco_ajustes_lote_idx on public.aco_ajustes_inventario(lote_id);
