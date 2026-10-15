@@ -221,3 +221,33 @@ begin
 end $$;
 revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public,anon;
 grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
+
+-- Índices das chaves estrangeiras e ajustes de políticas para evitar políticas SELECT duplicadas.
+create index if not exists aco_ajustes_lote_idx on public.aco_ajustes_inventario(lote_id);
+create index if not exists aco_apontamentos_lote_idx on public.aco_apontamentos_serra(lote_id);
+create index if not exists aco_apontamentos_item_idx on public.aco_apontamentos_serra(item_lista_id);
+create index if not exists aco_remanescentes_lote_idx on public.aco_remanescentes(lote_origem_id);
+create index if not exists aco_remanescentes_apontamento_idx on public.aco_remanescentes(apontamento_id);
+drop policy if exists aco_listas_manage on public.aco_listas_corte;
+drop policy if exists aco_listas_insert on public.aco_listas_corte;
+drop policy if exists aco_listas_update on public.aco_listas_corte;
+drop policy if exists aco_listas_delete on public.aco_listas_corte;
+create policy aco_listas_insert on public.aco_listas_corte for insert to authenticated with check(public.aco_pode_gerir());
+create policy aco_listas_update on public.aco_listas_corte for update to authenticated using(public.aco_pode_gerir()) with check(public.aco_pode_gerir());
+create policy aco_listas_delete on public.aco_listas_corte for delete to authenticated using(public.aco_pode_gerir());
+drop policy if exists aco_itens_manage on public.aco_itens_lista_corte;
+drop policy if exists aco_itens_insert on public.aco_itens_lista_corte;
+drop policy if exists aco_itens_update on public.aco_itens_lista_corte;
+drop policy if exists aco_itens_delete on public.aco_itens_lista_corte;
+create policy aco_itens_insert on public.aco_itens_lista_corte for insert to authenticated with check(public.aco_pode_gerir());
+create policy aco_itens_update on public.aco_itens_lista_corte for update to authenticated using(public.aco_pode_gerir()) with check(public.aco_pode_gerir());
+create policy aco_itens_delete on public.aco_itens_lista_corte for delete to authenticated using(public.aco_pode_gerir());
+drop policy if exists aco_rem_manage on public.aco_remanescentes;
+drop policy if exists aco_rem_insert on public.aco_remanescentes;
+drop policy if exists aco_rem_update on public.aco_remanescentes;
+drop policy if exists aco_rem_delete on public.aco_remanescentes;
+create policy aco_rem_insert on public.aco_remanescentes for insert to authenticated with check(public.aco_pode_gerir());
+create policy aco_rem_update on public.aco_remanescentes for update to authenticated using(public.aco_pode_gerir()) with check(public.aco_pode_gerir());
+create policy aco_rem_delete on public.aco_remanescentes for delete to authenticated using(public.aco_pode_gerir());
+drop policy if exists aco_serra_insert on public.aco_apontamentos_serra;
+create policy aco_serra_insert on public.aco_apontamentos_serra for insert to authenticated with check((select auth.uid()) is not null and (select public.aco_papel_atual()) in('admin','pcp','serra'));
