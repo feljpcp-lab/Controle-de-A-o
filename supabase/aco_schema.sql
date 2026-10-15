@@ -18,7 +18,7 @@ create table if not exists public.aco_listas_corte (
 );
 create table if not exists public.aco_itens_lista_corte (
  id uuid primary key default gen_random_uuid(), lista_id uuid not null references public.aco_listas_corte(id) on delete cascade,
- os text not null, componente text, cliente text, material text not null default 'H13',
+ os text not null, componente text, cliente text, extrusora text, material text not null default 'H13',
  diametro_mm numeric(8,2) not null check(diametro_mm>0), comprimento_mm numeric(10,2) not null check(comprimento_mm>0),
  quantidade_planejada integer not null default 1 check(quantidade_planejada>0),
  quantidade_cortada integer not null default 0 check(quantidade_cortada>=0), observacoes text, projetista text, classe text, codigo_barra text, fonte_linha text, criado_em timestamptz not null default now()
@@ -54,6 +54,7 @@ create table if not exists public.aco_movimentacoes (
 -- Ajustes idempotentes para instalações que já tenham criado a versão inicial das tabelas.
 alter table public.aco_listas_corte add column if not exists arquivo_path text;
 alter table public.aco_listas_corte add column if not exists data_lista date;
+alter table public.aco_itens_lista_corte add column if not exists extrusora text;
 alter table public.aco_itens_lista_corte add column if not exists projetista text;
 alter table public.aco_itens_lista_corte add column if not exists classe text;
 alter table public.aco_itens_lista_corte add column if not exists codigo_barra text;
@@ -290,8 +291,8 @@ begin
  values(trim(p_codigo_lista),'importada',p_arquivo_nome,p_arquivo_path,p_data_lista,p_observacoes) returning id into v_lista_id;
  for v_item in select value from jsonb_array_elements(p_itens) loop
    if coalesce(trim(v_item->>'os'),'')='' or coalesce(trim(v_item->>'componente'),'')='' or nullif(v_item->>'diametro_mm','') is null or nullif(v_item->>'comprimento_mm','') is null then raise exception 'Há item sem OS, componente, diâmetro ou comprimento'; end if;
-   insert into public.aco_itens_lista_corte(lista_id,os,componente,cliente,material,diametro_mm,comprimento_mm,quantidade_planejada,projetista,classe,codigo_barra,fonte_linha)
-   values(v_lista_id,trim(v_item->>'os'),trim(v_item->>'componente'),nullif(trim(coalesce(v_item->>'cliente','')),''),coalesce(nullif(trim(v_item->>'material'),''),'H13'),
+   insert into public.aco_itens_lista_corte(lista_id,os,componente,cliente,extrusora,material,diametro_mm,comprimento_mm,quantidade_planejada,projetista,classe,codigo_barra,fonte_linha)
+   values(v_lista_id,trim(v_item->>'os'),trim(v_item->>'componente'),nullif(trim(coalesce(v_item->>'cliente','')),''),nullif(trim(coalesce(v_item->>'extrusora','')),''),coalesce(nullif(trim(v_item->>'material'),''),'H13'),
      (v_item->>'diametro_mm')::numeric,(v_item->>'comprimento_mm')::numeric,1,
      nullif(trim(coalesce(v_item->>'projetista','')),''),nullif(trim(coalesce(v_item->>'classe','')),''),nullif(trim(coalesce(v_item->>'codigo_barra','')),''),nullif(trim(coalesce(v_item->>'fonte_linha','')),''));
  end loop;
