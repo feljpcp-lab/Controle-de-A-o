@@ -19,16 +19,16 @@ create table if not exists public.aco_listas_corte (
 create table if not exists public.aco_itens_lista_corte (
  id uuid primary key default gen_random_uuid(), lista_id uuid not null references public.aco_listas_corte(id) on delete cascade,
  os text not null, componente text, cliente text, material text not null default 'H13',
- diametro_mm numeric(8,2) not null check(diametro_mm>0), comprimento_mm integer not null check(comprimento_mm>0),
+ diametro_mm numeric(8,2) not null check(diametro_mm>0), comprimento_mm numeric(10,2) not null check(comprimento_mm>0),
  quantidade_planejada integer not null default 1 check(quantidade_planejada>0),
  quantidade_cortada integer not null default 0 check(quantidade_cortada>=0), observacoes text, criado_em timestamptz not null default now()
 );
 create table if not exists public.aco_apontamentos_serra (
  id uuid primary key default gen_random_uuid(), lote_id uuid not null references public.aco_lotes(id),
  item_lista_id uuid references public.aco_itens_lista_corte(id), os text not null, componente text,
- material text not null, diametro_mm numeric(8,2) not null, comprimento_peca_mm integer not null,
+ material text not null, diametro_mm numeric(8,2) not null, comprimento_peca_mm numeric(10,2) not null,
  quantidade_pecas integer not null, quantidade_cortes integer not null, perda_corte_mm integer not null,
- consumo_total_mm integer not null, barra_comprimento_mm integer not null, sobra_mm integer not null,
+ consumo_total_mm numeric(12,2) not null, barra_comprimento_mm integer not null, sobra_mm numeric(12,2) not null,
  destino_sobra text not null check(destino_sobra in('reutilizavel','sucata','sem_sobra')),
  observacoes text, operador_id uuid not null default auth.uid(), apontado_em timestamptz not null default now()
 );
@@ -48,7 +48,7 @@ create table if not exists public.aco_ajustes_inventario (
 create table if not exists public.aco_movimentacoes (
  id uuid primary key default gen_random_uuid(), lote_id uuid references public.aco_lotes(id),
  tipo text not null check(tipo in('entrada','consumo_serra','ajuste_inventario')),
- quantidade_barras_delta integer not null, comprimento_mm integer, referencia text, observacoes text,
+ quantidade_barras_delta integer not null, comprimento_mm numeric(12,2), referencia text, observacoes text,
  usuario_id uuid default auth.uid(), criado_em timestamptz not null default now()
 );
 create index if not exists aco_lotes_busca_idx on public.aco_lotes(diametro_mm,material,ativo);
@@ -146,10 +146,10 @@ grant usage on schema private to authenticated;
 -- Reforço de validação de vínculo: impede apontar em OS/medida/material divergentes.
 create or replace function private.aco_confirmar_corte(
  p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
- p_comprimento_peca_mm integer,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
+ p_comprimento_peca_mm numeric,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
 ) returns uuid language plpgsql security definer set search_path=''
 as $$
-declare v_lote public.aco_lotes%rowtype; v_item public.aco_itens_lista_corte%rowtype; v_perda integer; v_consumo integer; v_sobra integer; v_id uuid;
+declare v_lote public.aco_lotes%rowtype; v_item public.aco_itens_lista_corte%rowtype; v_perda integer; v_consumo numeric(12,2); v_sobra numeric(12,2); v_id uuid;
 begin
  if auth.uid() is null or public.aco_papel_atual() not in('admin','pcp','serra') then raise exception 'Acesso negado para apontamento de serra'; end if;
  if trim(coalesce(p_os,''))='' or p_quantidade_pecas<1 or p_comprimento_peca_mm<1 or p_quantidade_cortes<1 then raise exception 'OS, quantidades e comprimento são obrigatórios'; end if;
@@ -177,7 +177,7 @@ begin
  insert into public.aco_movimentacoes(lote_id,tipo,quantidade_barras_delta,comprimento_mm,referencia,observacoes) values(p_lote_id,'consumo_serra',-1,v_consumo,p_os,'Apontamento serra '||v_id::text);
  return v_id;
 end $$;
-revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) from public,anon;
+revoke all on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,numeric,integer,text,text) from public,anon;
 grant execute on function private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text) to authenticated;
 -- O schema privado não é exposto pela API; só usuários autenticados podem executar a rotina via wrapper.
 create schema if not exists private;
