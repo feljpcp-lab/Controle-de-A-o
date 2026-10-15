@@ -35,7 +35,7 @@ create table if not exists public.aco_apontamentos_serra (
 create table if not exists public.aco_remanescentes (
  id uuid primary key default gen_random_uuid(), lote_origem_id uuid references public.aco_lotes(id),
  apontamento_id uuid references public.aco_apontamentos_serra(id), material text not null,
- diametro_mm numeric(8,2) not null, comprimento_mm integer not null check(comprimento_mm>0),
+ diametro_mm numeric(8,2) not null, comprimento_mm numeric(12,2) not null check(comprimento_mm>0),
  quantidade integer not null default 1 check(quantidade>0), localizacao text,
  status text not null default 'disponivel' check(status in('disponivel','reservado','consumido','sucata')),
  criado_em timestamptz not null default now()
@@ -51,6 +51,20 @@ create table if not exists public.aco_movimentacoes (
  quantidade_barras_delta integer not null, comprimento_mm numeric(12,2), referencia text, observacoes text,
  usuario_id uuid default auth.uid(), criado_em timestamptz not null default now()
 );
+-- Ajustes idempotentes para instalações que já tenham criado a versão inicial das tabelas.
+alter table public.aco_listas_corte add column if not exists arquivo_path text;
+alter table public.aco_listas_corte add column if not exists data_lista date;
+alter table public.aco_itens_lista_corte add column if not exists projetista text;
+alter table public.aco_itens_lista_corte add column if not exists classe text;
+alter table public.aco_itens_lista_corte add column if not exists codigo_barra text;
+alter table public.aco_itens_lista_corte add column if not exists fonte_linha text;
+alter table public.aco_itens_lista_corte alter column comprimento_mm type numeric(10,2) using comprimento_mm::numeric;
+alter table public.aco_apontamentos_serra alter column comprimento_peca_mm type numeric(10,2) using comprimento_peca_mm::numeric;
+alter table public.aco_apontamentos_serra alter column consumo_total_mm type numeric(12,2) using consumo_total_mm::numeric;
+alter table public.aco_apontamentos_serra alter column sobra_mm type numeric(12,2) using sobra_mm::numeric;
+alter table public.aco_remanescentes alter column comprimento_mm type numeric(12,2) using comprimento_mm::numeric;
+alter table public.aco_movimentacoes alter column comprimento_mm type numeric(12,2) using comprimento_mm::numeric;
+
 create index if not exists aco_lotes_busca_idx on public.aco_lotes(diametro_mm,material,ativo);
 create index if not exists aco_movimentacoes_lote_idx on public.aco_movimentacoes(lote_id,criado_em desc);
 create index if not exists aco_itens_lista_lista_idx on public.aco_itens_lista_corte(lista_id);
@@ -144,6 +158,8 @@ revoke all on schema private from public, anon;
 grant usage on schema private to authenticated;
 
 -- Reforço de validação de vínculo: impede apontar em OS/medida/material divergentes.
+drop function if exists public.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text);
+drop function if exists private.aco_confirmar_corte(uuid,uuid,text,text,integer,integer,integer,text,text);
 create or replace function private.aco_confirmar_corte(
  p_lote_id uuid,p_item_lista_id uuid,p_os text,p_componente text,p_quantidade_pecas integer,
  p_comprimento_peca_mm numeric,p_quantidade_cortes integer,p_destino_sobra text,p_observacoes text default null
