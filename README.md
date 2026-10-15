@@ -39,3 +39,16 @@ O workflow `.github/workflows/deploy.yml` já está versionado. Para ativar a ho
 
 ## Preparar os usuários
 No Supabase Dashboard, em **Authentication → Users**, crie os usuários autorizados. Para cada usuário, atribua no campo `app_metadata` o papel `role` com um dos valores descritos acima. A equipe da serra recebe `serra`, e a interface restringe esse perfil à tela de apontamento. Não atribua permissões usando `user_metadata`, pois esse campo pode ser editado pelo usuário.
+
+## Importação da lista de corte em PDF
+- O importador lê o PDF no navegador, exibe os itens reconhecidos e pede confirmação antes de gravar.
+- A importação preserva OS, componente, diâmetro, dimensão decimal, cliente, campo extrusora, projetista e classe.
+- O PDF original fica no bucket privado `aco-listas-pdf`; certificados ficam no bucket privado `aco-certificados`.
+- O campo AÇO está vazio no PDF de exemplo; o sistema sugere H13 como padrão operacional, mas registra uma observação para conferência do PCP.
+- Os totais impressos são comparados com as dimensões mais a perda de serra configurada (3 mm abaixo de Ø250; 4 mm a partir de Ø250). Divergências são exibidas antes da confirmação e preservadas na observação da lista.
+- Dimensões com casas decimais são preservadas no banco; não arredondar 31,3 mm para 31 mm.
+
+## Segurança e validação
+- O acesso a entradas, ajustes, importações, apontamentos e certificados usa Supabase Auth, RLS e permissões específicas.
+- A rotina de corte é transacional e foi validada em teste com rollback: baixa uma barra, registra a perda e sobra, atualiza a quantidade cortada e cria o remanescente sem deixar dados de teste.
+- A importação transacional também foi validada com rollback; o teste não deixou itens de exemplo no banco.
