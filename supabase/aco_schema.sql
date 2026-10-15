@@ -13,7 +13,7 @@ create table if not exists public.aco_lotes (
 create table if not exists public.aco_listas_corte (
  id uuid primary key default gen_random_uuid(), codigo_lista text not null unique,
  origem text not null default 'manual' check(origem in('manual','importada')),
- arquivo_nome text, status text not null default 'aberta' check(status in('aberta','em_corte','concluida','cancelada')),
+ arquivo_nome text, arquivo_path text, data_lista date, status text not null default 'aberta' check(status in('aberta','em_corte','concluida','cancelada')),
  observacoes text, criado_por uuid default auth.uid(), criado_em timestamptz not null default now()
 );
 create table if not exists public.aco_itens_lista_corte (
@@ -21,7 +21,7 @@ create table if not exists public.aco_itens_lista_corte (
  os text not null, componente text, cliente text, material text not null default 'H13',
  diametro_mm numeric(8,2) not null check(diametro_mm>0), comprimento_mm numeric(10,2) not null check(comprimento_mm>0),
  quantidade_planejada integer not null default 1 check(quantidade_planejada>0),
- quantidade_cortada integer not null default 0 check(quantidade_cortada>=0), observacoes text, criado_em timestamptz not null default now()
+ quantidade_cortada integer not null default 0 check(quantidade_cortada>=0), observacoes text, projetista text, classe text, codigo_barra text, fonte_linha text, criado_em timestamptz not null default now()
 );
 create table if not exists public.aco_apontamentos_serra (
  id uuid primary key default gen_random_uuid(), lote_id uuid not null references public.aco_lotes(id),
@@ -243,3 +243,43 @@ create policy aco_rem_update on public.aco_remanescentes for update to authentic
 create policy aco_rem_delete on public.aco_remanescentes for delete to authenticated using(public.aco_pode_gerir());
 drop policy if exists aco_serra_insert on public.aco_apontamentos_serra;
 create policy aco_serra_insert on public.aco_apontamentos_serra for insert to authenticated with check((select auth.uid()) is not null and (select public.aco_papel_atual()) in('admin','pcp','serra'));
+
+-- PDF da lista de corte em bucket privado; importação transacional da lista e de seus itens.
+insert into storage.buckets (id,name,public,file_size_limit,allowed_mime_types)
+values ('aco-listas-pdf','aco-listas-pdf',false,20971520,array['application/pdf'])
+on conflict (id) do update set public=false,file_size_limit=20971520,allowed_mime_types=array['application/pdf'];
+drop policy if exists aco_listas_pdf_read on storage.objects;
+create policy aco_listas_pdf_read on storage.objects for select to authenticated
+using (bucket_id='aco-listas-pdf' and (select public.aco_pode_ver()));
+drop policy if exists aco_listas_pdf_upload on storage.objects;
+create policy aco_listas_pdf_upload on storage.objects for insert to authenticated
+with check (bucket_id='aco-listas-pdf' and (select public.aco_papel_atual()) in ('admin','pcp') and (storage.foldername(name))[1]=(select auth.uid())::text);
+drop policy if exists aco_listas_pdf_update on storage.objects;
+create policy aco_listas_pdf_update on storage.objects for update to authenticated
+using (bucket_id='aco-listas-pdf' and (select public.aco_papel_atual()) in ('admin','pcp') and (storage.foldername(name))[1]=(select auth.uid())::text)
+with check (bucket_id='aco-listas-pdf' and (select public.aco_papel_atual()) in ('admin','pcp') and (storage.foldername(name))[1]=(select auth.uid())::text);
+drop policy if exists aco_listas_pdf_delete on storage.objects;
+create policy aco_listas_pdf_delete on storage.objects for delete to authenticated
+using (bucket_id='aco-listas-pdf' and (select public.aco_papel_atual()) in ('admin','pcp') and (storage.foldername(name))[1]=(select auth.uid())::text);
+create or replace function public.aco_importar_lista_corte(
+ p_codigo_lista text,p_arquivo_nome text,p_arquivo_path text,p_data_lista date,p_itens jsonb,p_observacoes text default null
+) returns uuid language plpgsql security invoker set search_path=''
+as $$
+declare v_lista_id uuid; v_item jsonb;
+begin
+ if auth.uid() is null or public.aco_papel_atual() not in ('admin','pcp') then raise exception 'Somente administrador ou PCP pode importar listas'; end if;
+ if trim(coalesce(p_codigo_lista,''))='' or jsonb_typeof(p_itens)<>'array' or jsonb_array_length(p_itens)=0 then raise exception 'Código e itens da lista são obrigatórios'; end if;
+ if p_arquivo_path is not null and (storage.foldername(p_arquivo_path))[1]<>auth.uid()::text then raise exception 'Caminho do PDF inválido'; end if;
+ insert into public.aco_listas_corte(codigo_lista,origem,arquivo_nome,arquivo_path,data_lista,observacoes)
+ values(trim(p_codigo_lista),'importada',p_arquivo_nome,p_arquivo_path,p_data_lista,p_observacoes) returning id into v_lista_id;
+ for v_item in select value from jsonb_array_elements(p_itens) loop
+   if coalesce(trim(v_item->>'os'),'')='' or coalesce(trim(v_item->>'componente'),'')='' or nullif(v_item->>'diametro_mm','') is null or nullif(v_item->>'comprimento_mm','') is null then raise exception 'Há item sem OS, componente, diâmetro ou comprimento'; end if;
+   insert into public.aco_itens_lista_corte(lista_id,os,componente,cliente,material,diametro_mm,comprimento_mm,quantidade_planejada,projetista,classe,codigo_barra,fonte_linha)
+   values(v_lista_id,trim(v_item->>'os'),trim(v_item->>'componente'),nullif(trim(coalesce(v_item->>'cliente','')),''),coalesce(nullif(trim(v_item->>'material'),''),'H13'),
+     (v_item->>'diametro_mm')::numeric,(v_item->>'comprimento_mm')::numeric,1,
+     nullif(trim(coalesce(v_item->>'projetista','')),''),nullif(trim(coalesce(v_item->>'classe','')),''),nullif(trim(coalesce(v_item->>'codigo_barra','')),''),nullif(trim(coalesce(v_item->>'fonte_linha','')),''));
+ end loop;
+ return v_lista_id;
+end $$;
+revoke all on function public.aco_importar_lista_corte(text,text,text,date,jsonb,text) from public,anon;
+grant execute on function public.aco_importar_lista_corte(text,text,text,date,jsonb,text) to authenticated;
