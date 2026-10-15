@@ -33,3 +33,9 @@ O papel precisa ser definido por mecanismo administrativo confiável no Supabase
 
 ## Banco de dados
 Os objetos `aco_lotes`, `aco_listas_corte`, `aco_itens_lista_corte`, `aco_apontamentos_serra`, `aco_remanescentes`, `aco_ajustes_inventario`, `aco_movimentacoes` e as funções `aco_*` são exclusivos do controle de aço. A política de Row Level Security usa `auth.jwt()->'app_metadata'->>'role'`.
+
+## Ativação do endereço público
+O workflow `.github/workflows/deploy.yml` já está versionado. Para ativar a hospedagem na primeira vez, abra **Settings → Pages** no repositório e selecione **Build and deployment → Source: GitHub Actions**. Depois, confira a aba **Actions** até o workflow ficar verde. Não considero o site publicado até essa execução ser confirmada.
+
+## Preparar os usuários
+No Supabase Dashboard, em **Authentication → Users**, crie os usuários autorizados. Para cada usuário, atribua no campo `app_metadata` o papel `role` com um dos valores descritos acima. A equipe da serra recebe `serra`, e a interface restringe esse perfil à tela de apontamento. Não atribua permissões usando `user_metadata`, pois esse campo pode ser editado pelo usuário.
