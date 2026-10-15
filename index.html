@@ -102,7 +102,7 @@ window.readCutPdf=async function(){
    if(cm){classe=cm[1];tail=tail.slice(0,cm.index).trim()}
    const pm=tail.match(/\b(Luan|Nayara|Cleberson|Rosinei)\s*$/i);
    if(pm){projetista=pm[1];tail=tail.slice(0,pm.index).trim()}
-   let extrusora='';const em=tail.match(/\\s+(Ind)\\s*$/i);if(em){extrusora=em[1];tail=tail.slice(0,em.index).trim()}
+   let extrusora='';const em=tail.match(/\s+(Ind)\s*$/i);if(em){extrusora=em[1];tail=tail.slice(0,em.index).trim()}
    parsed.push({os:m[1],componente:m[2].trim(),diametro_mm:Number(m[3].replace(',','.')),comprimento_mm:Number(m[4].replace(',','.')),cliente:tail,extrusora:extrusora,projetista:projetista,classe:classe,material:'H13',codigo_barra:'',fonte_linha:raw});
   }
   const allText=textLines.join('\n'),dateMatch=allText.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
