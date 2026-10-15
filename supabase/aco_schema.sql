@@ -1,0 +1,4 @@
+-- FELJ Controle de Aço
+-- Execute no projeto Supabase FELJ (ref: jklgvpmgvkooghfhnirq).
+-- Este script cria somente objetos com prefixo aco_; não altera tabelas preexistentes.
+-- Schema aplicado diretamente ao banco para validação. Consulte README para perfis.
