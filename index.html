@@ -107,14 +107,13 @@ window.readCutPdf=async function(){
   const allText=textLines.join('\n'),dateMatch=allText.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/);
   let listDate=null;
   if(dateMatch){let yy=dateMatch[3];if(yy.length===2)yy='20'+yy;listDate=yy+'-'+dateMatch[2].padStart(2,'0')+'-'+dateMatch[1].padStart(2,'0')}
-  const actual=parsed.reduce((a,r)=>{a[r.diametro_mm]=(a[r.diametro_mm]||0)+r.comprimento_mm;return a},{});
-  const summaries=[],re=/Ø\s*(\d{2,3})\s*=\s*([\d.,]+)\s*mm/gi;let sm;
-  while((sm=re.exec(allText))!==null){const expected=Number(sm[2].replace(/\./g,'').replace(',','.'));summaries.push({diametro:Number(sm[1]),esperado:expected,extraido:Number(actual[Number(sm[1])]||0),diferenca:Number((Number(actual[Number(sm[1])]||0)-expected).toFixed(2))})}
+  const summaries=[],re=/Total\s*:\s*(\d+)\s*pç\(s\)\s*Ø\s*(\d{2,3})\s*=\s*([\d.,]+)\s*mm/gi;let sm,groupIndex=0;
+  while((sm=re.exec(allText))!==null){const count=Number(sm[1]),diametro=Number(sm[2]),expected=Number(sm[3].replace(/\./g,'').replace(',','.'));const group=parsed.slice(groupIndex,groupIndex+count);groupIndex+=count;const soma=group.reduce((a,r)=>a+r.comprimento_mm,0);const perda=diametro<250?3:4;const extraido=Number((soma+count*perda).toFixed(2));summaries.push({diametro:diametro,quantidade:count,esperado:expected,extraido:extraido,diferenca:Number((extraido-expected).toFixed(2)),linhas:group.length,diametroDivergente:group.some(r=>r.diametro_mm!==diametro)})}
   window.pendingPdfImport={file:file,rows:parsed,dataLista:listDate,summaries:summaries};
   if(!parsed.length){target.innerHTML='<div class="notice">Não consegui reconhecer linhas de itens neste PDF. Nenhum dado foi gravado. Confira se o arquivo contém texto selecionável, não apenas imagem.</div>';return}
   const totalDiff=summaries.some(x=>Math.abs(x.diferenca)>0.01);
-  let html='<div class="notice">Itens reconhecidos: <b>'+parsed.length+'</b> • Data da lista: <b>'+esc(listDate||'não identificada')+'</b> • '+(totalDiff?'Há divergências entre a soma das dimensões e os totais impressos.':'Totais impressos conferidos com as dimensões extraídas, quando disponíveis.')+'</div>';
-  if(summaries.length)html+='<div class="table-wrap"><table><thead><tr><th>Diâmetro</th><th>Total impresso (mm)</th><th>Soma extraída (mm)</th><th>Diferença (mm)</th></tr></thead><tbody>'+summaries.map(x=>'<tr><td>Ø'+x.diametro+'</td><td>'+x.esperado.toLocaleString('pt-BR')+'</td><td>'+x.extraido.toLocaleString('pt-BR',{maximumFractionDigits:2})+'</td><td><b>'+x.diferenca.toLocaleString('pt-BR',{maximumFractionDigits:2})+'</b></td></tr>').join('')+'</tbody></table></div>';
+  let html='<div class="notice">Itens reconhecidos: <b>'+parsed.length+'</b> • Data da lista: <b>'+esc(listDate||'não identificada')+'</b> • '+(totalDiff?'Há divergências entre a soma das dimensões e os totais impressos.':'Totais impressos comparados ao cálculo com a perda FELJ (3 mm abaixo de Ø250; 4 mm a partir de Ø250).')+'</div>';
+  if(summaries.length)html+='<div class="table-wrap"><table><thead><tr><th>Diâmetro</th><th>Total impresso (mm)</th><th>Calculado com perda FELJ (mm)</th><th>Diferença (mm)</th></tr></thead><tbody>'+summaries.map(x=>'<tr><td>Ø'+x.diametro+'</td><td>'+x.esperado.toLocaleString('pt-BR')+'</td><td>'+x.extraido.toLocaleString('pt-BR',{maximumFractionDigits:2})+'</td><td><b>'+x.diferenca.toLocaleString('pt-BR',{maximumFractionDigits:2})+'</b></td></tr>').join('')+'</tbody></table></div>';
   html+='<div class="table-wrap"><table><thead><tr><th>OS</th><th>Componente</th><th>Diâmetro</th><th>Dimensão (mm)</th><th>Cliente / campo extraído</th><th>Projetista</th><th>Classe</th></tr></thead><tbody>'+parsed.map(r=>'<tr><td>'+esc(r.os)+'</td><td>'+esc(r.componente)+'</td><td>Ø'+r.diametro_mm+'</td><td>'+r.comprimento_mm.toLocaleString('pt-BR',{maximumFractionDigits:2})+'</td><td>'+esc(r.cliente||'—')+'</td><td>'+esc(r.projetista||'—')+'</td><td>'+esc(r.classe||'—')+'</td></tr>').join('')+'</tbody></table></div>';
   html+='<div class="actions"><button type="button" onclick="window.confirmPdfImport()" '+(['admin','pcp'].includes(role)?'':'disabled')+'>Confirmar importação de '+parsed.length+' itens</button><button type="button" class="secondary" onclick="window.cancelPdfImport()">Cancelar</button></div>';
   target.innerHTML=html;
@@ -130,7 +129,7 @@ window.confirmPdfImport=async function(){
  if(uploadError)return toast('Falha ao armazenar o PDF: '+uploadError.message,true);
  const dateCode=(p.dataLista||new Date().toISOString().slice(0,10)).replace(/-/g,'');
  const code='PDF-'+dateCode+'-'+Date.now().toString().slice(-4);
- const discrepancy=p.summaries.filter(x=>Math.abs(x.diferenca)>0.01).map(x=>'Ø'+x.diametro+': impresso '+x.esperado+' mm, soma extraída '+x.extraido+' mm, diferença '+x.diferenca+' mm').join('; ');
+ const discrepancy=p.summaries.filter(x=>Math.abs(x.diferenca)>0.01).map(x=>'Ø'+x.diametro+': impresso '+x.esperado+' mm, total calculado com perda FELJ '+x.extraido+' mm, diferença '+x.diferenca+' mm').join('; ');
  const note='Importação PDF revisada pelo usuário. O campo AÇO estava vazio no documento; material H13 aplicado como padrão operacional e deve ser conferido pelo PCP.'+(discrepancy?' Divergências de total: '+discrepancy:'');
  const {data,error}=await sb.rpc('aco_importar_lista_corte',{p_codigo_lista:code,p_arquivo_nome:p.file.name,p_arquivo_path:path,p_data_lista:p.dataLista,p_itens:p.rows,p_observacoes:note});
  if(error){await sb.storage.from('aco-listas-pdf').remove([path]);return toast('A importação foi cancelada: '+error.message,true)}
